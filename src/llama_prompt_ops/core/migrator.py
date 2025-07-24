@@ -212,6 +212,10 @@ class PromptMigrator:
             adapter, train_size, validation_size
         )
 
+        logging.info(f'trainset: {len(self.trainset)}')
+        logging.info(f'valset: {len(self.valset)}')
+        logging.info(f'testset: {len(self.testset)}')
+
         # Update strategy with datasets if available
         if hasattr(self.strategy, "trainset") and self.trainset:
             self.strategy.trainset = self.trainset

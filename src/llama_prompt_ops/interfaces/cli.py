@@ -477,12 +477,16 @@ def get_models_from_config(config_dict, override_model_name=None, api_key=None):
         adapter_type=adapter_type,
         api_base=api_base,
         api_key=api_key,
+        task=model_config.get('task', 'chat/completions'),
+        api_version = model_config.get('api_version', '2024-10-21'),
+        tr_product_id =   model_config.get('tr_product_id', '0'),
         max_tokens=max_tokens,
         temperature=temperature,
         cache=cache,
     )
 
     # If task and proposer models are the same, reuse the instance
+    #TODO: figure out the use case of proposer model
     if task_model_name == proposer_model_name:
         click.echo(f"Using the same model for task and proposer: {task_model_name}")
         proposer_model = task_model
@@ -561,6 +565,8 @@ def get_strategy(
     """
     # Extract just the model name without provider path
     model_name = model_name_with_path.split("/")[-1]
+
+    logging.info(f'fetching strategy for configuration strategy_config: {strategy_config}, model_name_with_path: {model_name_with_path}, metric: {metric}, task_model: {task_model}, prompt_model: {prompt_model}, task_model_name: {task_model_name}, prompt_model_name: {prompt_model_name}')
 
     # Check if strategy is specified in config
     strategy_type = strategy_config.get("type")
@@ -647,6 +653,7 @@ def get_strategy(
         )
         click.echo(f"Auto-detected BasicOptimizationStrategy for model: {model_name}")
 
+    logging.info(f'strategy to be used: {strategy}')
     return strategy
 
 
@@ -697,6 +704,8 @@ def get_metric(config, model):
     if metric_class_path:
         # Resolve metric class path if it's a known type
         metric_class_path = resolve_class(metric_class_path, METRIC_CLASS_MAP)
+
+        logging.info(f'metric class path: {metric_class_path}')
 
         try:
             # Import the metric class dynamically
@@ -812,7 +821,7 @@ def migrate(config, model, output_dir, save_yaml, api_key_env, dotenv_path, log_
     # Load configuration
     try:
         config_dict = load_config(config)
-        click.echo(f"Loaded configuration from {config}")
+        click.echo(f"Loaded configuration from {config} are: {config_dict}")
     except ValueError as e:
         click.echo(f"Error: {str(e)}", err=True)
         sys.exit(1)
@@ -840,7 +849,7 @@ def migrate(config, model, output_dir, save_yaml, api_key_env, dotenv_path, log_
     # Create metric based on config - use task_model for metric
     try:
         metric = get_metric(config_dict, task_model)
-        click.echo(f"Using metric: {metric.__class__.__name__}")
+        click.echo(f"Using metric: {metric}")
     except ValueError as e:
         click.echo(f"Error creating metric: {str(e)}", err=True)
         sys.exit(1)
@@ -848,7 +857,7 @@ def migrate(config, model, output_dir, save_yaml, api_key_env, dotenv_path, log_
     # Get dataset adapter from config
     try:
         dataset_adapter = get_dataset_adapter_from_config(config_dict, config)
-        click.echo(f"Using dataset adapter: {dataset_adapter.__class__.__name__}")
+        click.echo(f"Using dataset adapter: {dataset_adapter}")
     except ValueError as e:
         click.echo(f"Error: {str(e)}", err=True)
         sys.exit(1)
@@ -861,15 +870,22 @@ def migrate(config, model, output_dir, save_yaml, api_key_env, dotenv_path, log_
         sys.exit(1)
 
     # Create strategy based on config
+
+    if config_dict.get('model') and config_dict.get('model').get('task_model'):
+        model_name_for_strategy = config_dict.get('model').get('task_model')
+    else:
+        model_name_for_strategy = config_dict.get("model", {}).get("name", ""),
     strategy = get_strategy(
         config_dict.get("strategy", {}),
-        config_dict.get("model", {}).get("name", ""),
+        model_name_for_strategy,
         metric,
         task_model,
         prompt_model,
         task_model_name=task_model_name,
         prompt_model_name=proposer_model_name,
     )
+
+    click.echo(f"Using strategy: {strategy}")
 
     # Create migrator
     migrator = PromptMigrator(

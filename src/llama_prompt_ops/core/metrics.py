@@ -30,6 +30,8 @@ import dspy
 
 from llama_prompt_ops.core.model import ModelAdapter
 from llama_prompt_ops.core.utils.logging import get_logger  # Added import
+from sentence_transformers import SentenceTransformer  # new import
+from sklearn.metrics.pairwise import cosine_similarity  # new import
 
 T = TypeVar("T", bound=Any)
 U = TypeVar("U", bound=Any)
@@ -1207,3 +1209,71 @@ class StandardJSONMetric(MetricBase):
             result["total"] = 0.0
 
         return result
+
+
+class SentenceTransformerMetric(MetricBase):
+    from sentence_transformers import SentenceTransformer
+    from sklearn.metrics.pairwise import cosine_similarity
+    """
+    Evaluates predictions by checking for semantic similarity between predicitons and golden truth.
+
+    This metric compares the prediction and ground truth strings
+    and returns 1.0 if they match exactly, 0.0 otherwise.
+    """
+
+    def __init__(self, model_name = 'all-MiniLM-L6-v2', case_sensitive: bool = False, strip_whitespace: bool = True):
+        """
+        Initialize the exact match metric.
+
+        Args:
+            case_sensitive: Whether to perform case-sensitive matching
+            strip_whitespace: Whether to strip whitespace before comparing
+        """
+        self.case_sensitive = case_sensitive
+        self.strip_whitespace = strip_whitespace
+        self.logger = get_logger()  # Added logger initialization
+        self.model = SentenceTransformer(model_name)
+        self.model_name = model_name  # remember the transformer name
+
+    def __str__(self) -> str:
+        """Return a concise description of this metric instance."""
+        return (
+            f"SentenceTransformerMetric(model_name={self.model_name!r}, "
+            f"case_sensitive={self.case_sensitive}, "
+            f"strip_whitespace={self.strip_whitespace})"
+        )
+    
+    def __call__(
+        self, gold: Any, pred: Any, trace: bool = False, **kwargs
+    ) -> Union[Dict[str, float], float]:
+        """
+        Check if prediction exactly matches ground truth.
+
+        Args:
+            gold: Ground truth string or object with a string representation
+            pred: Predicted string or object with a string representation
+            trace: Whether to print detailed information
+
+        Returns:
+            Dictionary with 'exact_match' score (1.0 for match, 0.0 for mismatch)
+        """
+        gold_str = str(gold)
+        pred_str = str(pred)
+
+        if self.strip_whitespace:
+            gold_str = gold_str.strip()
+            pred_str = pred_str.strip()
+
+        if not self.case_sensitive:
+            gold_str = gold_str.lower()
+            pred_str = pred_str.lower()
+        
+        embeddings = self.model.encode([gold_str, pred_str])
+        similarity_score = cosine_similarity(
+                                    [embeddings[0]], 
+                                    [embeddings[1]]
+                                )[0][0]
+
+        if trace:
+            return {'golden_reponse' : gold_str, 'predited_response': pred_str,  'embeddings' : embeddings, 'similarity_score': similarity_score}
+        return similarity_score

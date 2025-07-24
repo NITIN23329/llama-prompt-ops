@@ -1,0 +1,46 @@
+
+model:
+  adapter_type: custom
+  task_model: llama3-3-70b-instruct
+  task: chat/completions
+  api_version: 2024-10-21
+  proposer_model: llama3-3-70b-instruct
+  # Walmart API configuration
+  api_base: https://wmtllmgateway.stage.walmart.com/wmtllmgateway/v1/generate
+  tr_product_id: 1590
+
+metric:
+  # Use a custom sentence transformer metric
+  class: llama_prompt_ops.core.metrics.SentenceTransformerMetric
+  model_name: all-MiniLM-L6-v2
+# metric:
+#   class: llama_prompt_ops.core.metrics.DSPyMetricAdapter
+#   signature_name: similarity
+#   normalize_to: [0, 1]
+
+dataset:
+  # Use the built-in adapter for JSON data
+  adapter_class: llama_prompt_ops.core.datasets.DataframeToJSONAdapter
+  path: data/cyborg_data_small.csv
+  # Data split proportions
+  train_size: 0.3
+  validation_size: 0.2
+
+
+system_prompt:
+  file: prompts/system_prompt.txt
+  inputs:
+  - question
+  outputs:
+  - answer
+
+
+
+optimization:
+  strategy: llama
+  apply_formatting: true
+  apply_templates: true
+  # Number of optimization iterations
+  num_trials: 5
+  # Number of candidate prompts to generate per iteration
+  num_candidates: 8

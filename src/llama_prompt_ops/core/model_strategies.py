@@ -160,6 +160,16 @@ class LlamaStrategy(BaseStrategy):
         # Delegate to the base strategy for optimization
         return self.base_strategy.run(processed_data)
 
+    def __str__(self) -> str:
+        return (
+            f"LlamaStrategy(model_name={self.base_strategy.model_name!r}, "
+            f"num_threads={self.base_strategy.num_threads}, "
+            f"apply_formatting={self.apply_formatting}, "
+            f"apply_templates={self.apply_templates}, "
+            f"template_type={self.template_type}, "
+            f"auto={self.base_strategy.auto!r})"
+        )
+
 
 def get_strategy_for_model(model_name: str, **kwargs) -> BaseStrategy:
     """

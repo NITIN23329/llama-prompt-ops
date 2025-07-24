@@ -12,6 +12,7 @@ It leverages LiteLLM's unified interface for accessing various LLM providers.
 """
 
 import os
+import requests
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Union
 
@@ -332,7 +333,170 @@ class TextGradModelAdapter(ModelAdapter):
         )
 
         return response.text
+    
+class CustomModelAdapter(ModelAdapter):
+    """
+    Custom adapter for Walmart-hosted Llama models.
+    
+    This adapter connects to your Walmart API and makes it compatible with DSPy
+    for prompt optimization.
+    """
 
+    def __init__(
+        self,
+        api_base: str = None,
+        api_key: str = None,
+        model_name: str = None,
+        task: str = None, 
+        api_version: str = None, 
+        tr_product_id: str = None,
+        max_tokens: int = 100000,
+        temperature: float = 0.0,
+        cache: bool = False,
+        **kwargs
+    ):
+        """
+        Initialize the Walmart model adapter.
+
+        Args:
+            api_base: The API base URL for Walmart's API
+            api_key: API key for authentication
+            model_name: The model identifier 
+            task: The task type (default: chat/completions)
+            api_version: API version to use
+            tr_product_id: Product ID for tracking
+            max_tokens: Maximum number of tokens to generate
+            temperature: Sampling temperature
+            cache: Whether to cache responses
+            **kwargs: Additional parameters to pass to the API
+        """
+        # Store initialization parameters
+        self.api_base = api_base
+        self.api_key = api_key
+        self.model_name = model_name
+        self.task = task
+        self.api_version = api_version
+        self.tr_product_id = tr_product_id
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.cache = cache
+        
+        # Store any additional kwargs
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+            
+        # Log essential parameters for debugging
+        print(f'api url: {self.api_base} api_key: {self.api_key} model_name: {self.model_name} task: {self.task} api_version: {self.api_version} tr_product_id: {self.tr_product_id}')   
+        
+        # Create a DSPy-compatible model wrapper
+        # This is CRITICAL for optimization to work!
+
+        
+    def __str__(self):
+        """
+        String representation of the CustomModelAdapter instance.
+        
+        Returns:
+            A formatted string showing all member variables.
+        """
+        return (
+            f"CustomModelAdapter(\n"
+            f"  api_base: {self.api_base},\n"
+            f"  model_name: {self.model_name},\n"
+            f"  task: {self.task},\n"
+            f"  api_version: {self.api_version},\n"
+            f"  tr_product_id: {self.tr_product_id},\n"
+            f"  api_key: {self.api_key}\n"
+            f")"
+        )
+
+    def build_request_format(self, messages):
+        return {
+            "model": self.model_name,
+            "task": self.task,
+            "api-version": self.api_version,
+            "model-params": {
+                "messages": messages
+            }
+        }
+    def generate(self, prompt: str, **kwargs) -> str:
+        """
+        Generate text for a single user prompt using the chat-completions endpoint.
+        """
+        print(f'inside generate with promot: {prompt} and kwargs: {kwargs}')
+        # Wrap the prompt as a user message and delegate to chat format
+        messages = [{"role": "user", "content": prompt}]
+        return self.generate_with_chat_format(messages, **kwargs)
+
+    def generate_with_chat_format(
+        self, messages: List[Dict[str, str]], **kwargs
+    ) -> str:
+        """
+        Generate text using a chat format with multiple messages.
+
+        Args:
+            messages: List of message dictionaries with 'role' and 'content' keys
+        """
+
+        print(f'inside generate with generate_with_chat_format: {messages} and kwargs: {kwargs}')
+        
+        # Prepare headers
+        headers = {
+            "x-api-key": self.api_key,
+            "WM_TR_PRODUCT.ID": str(self.tr_product_id),
+            "Content-Type": "application/json"
+        }
+        
+        payload = self.build_request_format(messages)
+        
+        try:
+            response = requests.post(self.api_base, json=payload, headers=headers, verify=False)
+            response.raise_for_status()
+            
+            # Process the response
+            response_data = response.json()
+            print(f"API Response structure: {type(response_data)}")
+            
+            # Make sure we return a string for DSPy compatibility
+            if isinstance(response_data, dict):
+                # Check common response formats
+                if "choices" in response_data and len(response_data["choices"]) > 0:
+                    # OpenAI-like format
+                    if isinstance(response_data["choices"][0], dict):
+                        if "message" in response_data["choices"][0]:
+                            return response_data["choices"][0]["message"].get("content", "")
+                        elif "text" in response_data["choices"][0]:
+                            return response_data["choices"][0]["text"]
+                
+                # Check for direct content field
+                if "content" in response_data:
+                    return response_data["content"]
+                elif "text" in response_data:
+                    return response_data["text"]
+                elif "response" in response_data:
+                    return response_data["response"]
+                elif "answer" in response_data:
+                    return response_data["answer"]
+                elif "message" in response_data:
+                    if isinstance(response_data["message"], dict):
+                        return response_data["message"].get("content", "")
+                    else:
+                        return str(response_data["message"])
+                
+                # If we can't find a content field, use the full response
+                # but make it clear we're returning a structured response
+                keys = list(response_data.keys())
+                print(f"Could not extract text from response. Available keys: {keys}")
+                return str(response_data)
+            else:
+                return str(response_data)
+                
+        except Exception as e:
+            # For errors, return a string instead of a dictionary
+            print(f"Error calling model API: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return f"Error calling model API: {str(e)}"
 
 def setup_model(model_name=None, adapter_type="dspy", **kwargs):
     """
@@ -394,11 +558,16 @@ def setup_model(model_name=None, adapter_type="dspy", **kwargs):
         logger.progress(
             f" Using model with TextGrad: {kwargs.get('model_name', 'custom configuration')}"
         )
+    elif adapter_type.lower() == "custom":
+        # Make sure model_name is passed correctly
+        if model_name and "model_name" not in kwargs:
+            kwargs["model_name"] = model_name
+        adapter = CustomModelAdapter(**kwargs)
+        logger.progress(f'setting up custom adapter: {adapter}')
     else:
         raise ValueError(f"Unsupported adapter type: {adapter_type}")
 
     return adapter
-
 
 def get_model_adapter(adapter_type, **kwargs):
     """
@@ -415,3 +584,4 @@ def get_model_adapter(adapter_type, **kwargs):
         ValueError: If the adapter type is not supported
     """
     return setup_model(adapter_type=adapter_type, **kwargs)
+

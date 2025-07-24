@@ -511,7 +511,60 @@ class RAGJSONAdapter(ConfigurableJSONAdapter):
 
         return standardized_data
 
+class DataframeToJSONAdapter(DatasetAdapter):
+    """
+    Adapter for GPT-4 style JSON datasets with a specific structure.
 
+    This adapter is designed to handle datasets that follow the GPT-4 format,
+    where each example contains a 'messages' field with a list of message objects.
+    It extracts the first user message as input and the last assistant message as output.
+    """
+
+    def __str__(self) -> str:
+        # Return a human-readable representation
+        return f"{self.__class__.__name__}(path={self.dataset_path}, format={self.file_format})"
+
+    def adapt(self) -> List[Dict[str, Any]]:
+        """
+        Transform the GPT-4 JSON dataset into standardized format.
+
+        Returns:
+            List of standardized examples with inputs and outputs
+        """
+        raw_data = self.load_raw_data()
+        standardized_data = []
+
+        logging.info(f"loading dataset:  {len(raw_data)} examples from { self.dataset_path} with format: {self.file_format}")
+
+
+        for row in raw_data:
+
+
+            request_dict = eval(row['request'])
+            
+            messages = request_dict['requestBody']['model-params']['messages']
+
+            request = ''
+            for msg in messages:
+                if msg['role'] == 'user':
+                    request += msg['content']
+
+            
+            response_dict = eval(row['response'])
+            response = response_dict['responseBody']['choices'][0]['message']['content']
+
+            if not request or not response:
+                continue
+
+            standardized_example = {
+                "inputs": {"question": request},
+                "outputs": {"answer":response},
+                "metadata": {},
+            }
+            standardized_data.append(standardized_example)
+
+        return standardized_data   
+    
 def create_dspy_example(doc: Dict[str, Any]) -> dspy.Example:
     """
     Convert a standardized document into a DSPy example.
