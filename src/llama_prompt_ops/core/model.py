@@ -12,7 +12,9 @@ It leverages LiteLLM's unified interface for accessing various LLM providers.
 """
 
 import os
+import sys
 import requests
+from datetime import datetime, date
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Union
 
@@ -375,23 +377,81 @@ class CustomModelAdapter(ModelAdapter):
         self.api_key = api_key
         self.model_name = model_name
         self.task = task
-        self.api_version = api_version
+        
+        # Convert datetime.date to string format if needed
+        if isinstance(api_version, datetime):
+            self.api_version = api_version.strftime('%Y-%m-%d')
+        elif isinstance(api_version, date):
+            self.api_version = api_version.isoformat()
+        elif hasattr(api_version, 'isoformat'):  # Other date-like objects
+            self.api_version = api_version.isoformat()
+        else:
+            self.api_version = api_version
+            
+        print(f'api_version converted to: {self.api_version} (type: {type(self.api_version)})')
+        
         self.tr_product_id = tr_product_id
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.cache = cache
+
+        self.kwargs = {
+            "model": model_name,
+            "api_base": api_base,
+            "api_key": api_key,
+            "task": task,
+            "api_version": self.api_version,  # Use the converted string version
+            "tr_product_id": tr_product_id,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "cache": cache,
+            **kwargs,
+        }
         
-        # Store any additional kwargs
-        for key, value in kwargs.items():
-            setattr(self, key, value)
+        # # Store any additional kwargs
+        # for key, value in kwargs.items():
+        #     setattr(self, key, value)
             
         # Log essential parameters for debugging
-        print(f'api url: {self.api_base} api_key: {self.api_key} model_name: {self.model_name} task: {self.task} api_version: {self.api_version} tr_product_id: {self.tr_product_id}')   
+        print(f'api url: {self.api_base} api_key: {self.api_key} model_name: {self.model_name} task: {self.task} api_version: {self.api_version} tr_product_id: {self.tr_product_id}, max_tokens : {self.max_tokens}, temperature: {self.temperature}, kwargs : {self.kwargs}')   
         
-        # Create a DSPy-compatible model wrapper
-        # This is CRITICAL for optimization to work!
+        if DSPY_AVAILABLE:
+            class CustomDSPyLM(dspy.LM):
+                def __init__(self, adapter):
+                    print(f'calling __init__ of CustomDSPyLM {self}, adapter: {adapter}')
 
-        
+                    super().__init__(model=adapter.model_name)
+                    self.adapter = adapter
+                    self.model = adapter.model_name
+
+                def __call__(self,**kwargs):
+                    print(f'calling __call__ of CustomDSPyLM ')
+                    messages = kwargs['messages']
+                    response = self.adapter.generate_with_chat_format(messages,**self.adapter.kwargs)
+                    print(f'response got from llm gateway: {response}')
+                    return response
+
+                # def request(self, prompt, **kwargs):
+                #     print(f'calling request of CustomDSPyLM {self}, prompt: {prompt}, kwargs: {kwargs}')
+
+                #     return self.adapter.generate(prompt, **kwargs)
+            
+            self._model = CustomDSPyLM(self)
+            # This makes the LM accessible for DSPy (if needed globally)
+            dspy.configure(lm=self._model)
+            if hasattr(dspy, "settings"):
+                dspy.settings.lm = self._model
+            if hasattr(dspy, "LM"):
+                dspy.LM.lm = self._model
+            if hasattr(dspy, "teleprompt"):
+                if hasattr(dspy.teleprompt, "lm"):
+                    dspy.teleprompt.lm = self._model
+            print(f"Created DSPy-compatible model wrapper for {self.model_name}")
+        else:
+            print("Warning: DSPy not available, optimization will not work.")
+            self._model = None
+
+                
     def __str__(self):
         """
         String representation of the CustomModelAdapter instance.
@@ -419,26 +479,22 @@ class CustomModelAdapter(ModelAdapter):
                 "messages": messages
             }
         }
-    def generate(self, prompt: str, **kwargs) -> str:
+    def generate(self, messages: str, **kwargs) -> str:
+
+        raise Exception('calling generate method YOYO??')
         """
         Generate text for a single user prompt using the chat-completions endpoint.
         """
-        print(f'inside generate with promot: {prompt} and kwargs: {kwargs}')
+        print(f'inside generate with promot: {messages} and kwargs: {kwargs}')
         # Wrap the prompt as a user message and delegate to chat format
-        messages = [{"role": "user", "content": prompt}]
-        return self.generate_with_chat_format(messages, **kwargs)
+        return self.generate_with_chat_format(prompt, **kwargs)
 
     def generate_with_chat_format(
-        self, messages: List[Dict[str, str]], **kwargs
+        self, messages: str, **kwargs
     ) -> str:
-        """
-        Generate text using a chat format with multiple messages.
 
-        Args:
-            messages: List of message dictionaries with 'role' and 'content' keys
-        """
 
-        print(f'inside generate with generate_with_chat_format: {messages} and kwargs: {kwargs}')
+        print(f'inside generate with generate_with_chat_format')
         
         # Prepare headers
         headers = {
@@ -448,6 +504,8 @@ class CustomModelAdapter(ModelAdapter):
         }
         
         payload = self.build_request_format(messages)
+
+        print(f'payload build: {payload}')
         
         try:
             response = requests.post(self.api_base, json=payload, headers=headers, verify=False)
@@ -455,7 +513,7 @@ class CustomModelAdapter(ModelAdapter):
             
             # Process the response
             response_data = response.json()
-            print(f"API Response structure: {type(response_data)}")
+            print(f"API response_data: {response_data}")
             
             # Make sure we return a string for DSPy compatibility
             if isinstance(response_data, dict):
