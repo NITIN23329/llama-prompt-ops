@@ -540,7 +540,7 @@ class DataframeToJSONAdapter(DatasetAdapter):
         for row in raw_data:
 
 
-            request_dict = eval(row['request'])
+            request_dict = eval(row['original_request'])
             
             messages = request_dict['requestBody']['model-params']['messages']
 
@@ -550,7 +550,7 @@ class DataframeToJSONAdapter(DatasetAdapter):
                     request += msg['content']
 
             
-            response_dict = eval(row['response'])
+            response_dict = eval(row['original_response'])
             response = response_dict['responseBody']['choices'][0]['message']['content']
 
             if not request or not response:

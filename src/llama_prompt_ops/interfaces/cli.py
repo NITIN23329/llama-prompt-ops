@@ -781,7 +781,38 @@ def load_config(config_path):
     default="INFO",
     help="Set the logging level",
 )
-def migrate(config, model, output_dir, save_yaml, api_key_env, dotenv_path, log_level):
+@click.option(
+    "--debug",
+    is_flag=True,
+    default=False,
+    help="Enable debug mode with enhanced logging and error handling",
+)
+@click.option(
+    "--pdb",
+    is_flag=True,
+    default=False,
+    help="Break into Python debugger (pdb) before starting optimization",
+)
+@click.option(
+    "--break-on-error",
+    is_flag=True,
+    default=False,
+    help="Break into debugger when an exception occurs during optimization",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Validate configuration and setup without running optimization",
+)
+@click.option(
+    "--verbose-dspy",
+    is_flag=True,
+    default=False,
+    help="Enable verbose logging for DSPy internals",
+)
+def migrate(config, model, output_dir, save_yaml, api_key_env, dotenv_path, log_level, 
+           debug, pdb, break_on_error, dry_run, verbose_dspy):
     """
     Migrate and optimize prompts using a YAML configuration file.
 

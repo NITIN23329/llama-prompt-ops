@@ -14,11 +14,16 @@ It leverages LiteLLM's unified interface for accessing various LLM providers.
 import os
 import sys
 import requests
+import warnings
 from datetime import datetime, date
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Union
 
 from .utils.logging import get_logger
+
+# Suppress urllib3 SSL warnings for unverified HTTPS requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 try:
     import dspy
@@ -418,20 +423,35 @@ class CustomModelAdapter(ModelAdapter):
         if DSPY_AVAILABLE:
             class CustomDSPyLM(dspy.LM):
                 def __init__(self, adapter):
-                    print(f'calling __init__ of CustomDSPyLM {self}, adapter: {adapter}')
 
                     super().__init__(model=adapter.model_name)
                     self.adapter = adapter
                     self.model = adapter.model_name
 
                 def __call__(self,**kwargs):
-                    print(f'calling __call__ of CustomDSPyLM ')
                     messages = kwargs['messages']
-                    response = self.adapter.generate_with_chat_format(messages,**self.adapter.kwargs)
-                    print(f'response got from llm gateway: {response}')
-                    return response
+                    raw_response = self.adapter.generate_with_chat_format(messages, **self.adapter.kwargs)
 
-                # def request(self, prompt, **kwargs):
+                    try:
+                       
+                        outputs = [
+                            {
+                                "text": c.get('message').get('content') ,
+                                "logprobs": None,
+                            }
+                            for c in raw_response.get('choices')
+                        
+                        ]
+
+                        
+
+                        return outputs
+                    except Exception as e: 
+                        print(f'@@@@@@@@@@@@@@@@@@@@@@@@@@@@@{raw_response}@@@@@@@@@@@@@@@@@@@@')
+                        print(f"-----------------------------{raw_response.get('choices','No choices we have')}-----------------------------")
+                        print(f'-----------------------------{e}-----------------------------')
+
+                # def request(self, prompt, **kwargs):¸
                 #     print(f'calling request of CustomDSPyLM {self}, prompt: {prompt}, kwargs: {kwargs}')
 
                 #     return self.adapter.generate(prompt, **kwargs)
@@ -482,20 +502,11 @@ class CustomModelAdapter(ModelAdapter):
     def generate(self, messages: str, **kwargs) -> str:
 
         raise Exception('calling generate method YOYO??')
-        """
-        Generate text for a single user prompt using the chat-completions endpoint.
-        """
-        print(f'inside generate with promot: {messages} and kwargs: {kwargs}')
-        # Wrap the prompt as a user message and delegate to chat format
-        return self.generate_with_chat_format(prompt, **kwargs)
 
     def generate_with_chat_format(
-        self, messages: str, **kwargs
-    ) -> str:
+        self, messages, **kwargs
+    ):
 
-
-        print(f'inside generate with generate_with_chat_format')
-        
         # Prepare headers
         headers = {
             "x-api-key": self.api_key,
@@ -504,8 +515,6 @@ class CustomModelAdapter(ModelAdapter):
         }
         
         payload = self.build_request_format(messages)
-
-        print(f'payload build: {payload}')
         
         try:
             response = requests.post(self.api_base, json=payload, headers=headers, verify=False)
@@ -513,41 +522,9 @@ class CustomModelAdapter(ModelAdapter):
             
             # Process the response
             response_data = response.json()
-            print(f"API response_data: {response_data}")
+
+            return response_data
             
-            # Make sure we return a string for DSPy compatibility
-            if isinstance(response_data, dict):
-                # Check common response formats
-                if "choices" in response_data and len(response_data["choices"]) > 0:
-                    # OpenAI-like format
-                    if isinstance(response_data["choices"][0], dict):
-                        if "message" in response_data["choices"][0]:
-                            return response_data["choices"][0]["message"].get("content", "")
-                        elif "text" in response_data["choices"][0]:
-                            return response_data["choices"][0]["text"]
-                
-                # Check for direct content field
-                if "content" in response_data:
-                    return response_data["content"]
-                elif "text" in response_data:
-                    return response_data["text"]
-                elif "response" in response_data:
-                    return response_data["response"]
-                elif "answer" in response_data:
-                    return response_data["answer"]
-                elif "message" in response_data:
-                    if isinstance(response_data["message"], dict):
-                        return response_data["message"].get("content", "")
-                    else:
-                        return str(response_data["message"])
-                
-                # If we can't find a content field, use the full response
-                # but make it clear we're returning a structured response
-                keys = list(response_data.keys())
-                print(f"Could not extract text from response. Available keys: {keys}")
-                return str(response_data)
-            else:
-                return str(response_data)
                 
         except Exception as e:
             # For errors, return a string instead of a dictionary

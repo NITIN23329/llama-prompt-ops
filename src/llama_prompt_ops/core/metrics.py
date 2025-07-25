@@ -1257,8 +1257,10 @@ class SentenceTransformerMetric(MetricBase):
         Returns:
             Dictionary with 'exact_match' score (1.0 for match, 0.0 for mismatch)
         """
-        gold_str = str(gold)
-        pred_str = str(pred)
+        # self.logger.progress(f'calling SentenceTransformerMetric with gold: {gold}, pred: {pred}')  # Added logging
+        # Extract values from DSPy objects if needed
+        gold_str = self._extract_text_value(gold)
+        pred_str = self._extract_text_value(pred)
 
         if self.strip_whitespace:
             gold_str = gold_str.strip()
@@ -1273,7 +1275,58 @@ class SentenceTransformerMetric(MetricBase):
                                     [embeddings[0]], 
                                     [embeddings[1]]
                                 )[0][0]
+        
+        # print(f'score got gold_str:{gold_str}, pred_str: {pred_str} :{similarity_score}')
 
         if trace:
             return {'golden_reponse' : gold_str, 'predited_response': pred_str,  'embeddings' : embeddings, 'similarity_score': similarity_score}
         return similarity_score
+    
+    def _extract_text_value(self, obj: Any) -> str:
+        """
+        Extract text value from various object types that DSPy might pass.
+        
+        Args:
+            obj: Object to extract text from (DSPy Example, Prediction, dict, str, etc.)
+            
+        Returns:
+            String representation of the object's content
+        """
+        
+        # Handle None values
+        if obj is None:
+            return ""
+        
+        # Handle strings directly
+        if isinstance(obj, str):
+            return obj
+        
+        # Handle DSPy Example objects
+        if hasattr(obj, '_output_keys') and hasattr(obj, 'get'):
+            # This is likely a DSPy Example, extract the answer field
+            answer = obj.get('answer', '')
+            if answer:
+                return str(answer)
+            # Fallback to any output field
+            for key in getattr(obj, '_output_keys', []):
+                value = obj.get(key, '')
+                if value:
+
+                    return str(value)
+        
+        # Handle DSPy Prediction objects  
+        if hasattr(obj, 'answer'):
+            return str(obj.answer)
+        
+        # Handle dictionaries
+        if isinstance(obj, dict):
+            # Try 'answer' field first
+            if 'answer' in obj:
+                return str(obj['answer'])
+            # Fallback to any string value in the dict
+            for value in obj.values():
+                if isinstance(value, str) and value.strip():
+                    return value
+        
+        # Handle any other object type
+        return str(obj)
