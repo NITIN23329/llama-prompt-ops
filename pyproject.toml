@@ -3,9 +3,9 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "llama-prompt-ops"
-version = "0.0.8"
-description = "A tool for migrating and optimizing prompts"
+name = "wmt-llama-prompt-ops"
+version = "1.0"
+description = "A tool for migrating and optimizing prompts designed for Walmart"
 readme = "README.md"
 authors = []
 license = {text = "MIT"}

@@ -21,10 +21,11 @@ metric:
 dataset:
   # Use the built-in adapter for JSON data
   adapter_class: llama_prompt_ops.core.datasets.DataframeToJSONAdapter
+  # path: data/cyborg_data_small.csv
   path: data/cyborg_data_small.csv
   # Data split proportions - increased training data for better optimization
-  train_size: 0.7
-  validation_size: 0.2
+  # train_size: 0.7
+  # validation_size: 0.2
 
 
 system_prompt:
